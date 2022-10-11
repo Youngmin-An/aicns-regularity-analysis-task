@@ -41,8 +41,9 @@ if __name__ == "__main__":
     report: AnalysisReport = analyze_regularity(ts=ts, time_col_name=time_col_name)
 
     # Save regularity and period to DWH
-    save_regularity_to_dwh(regularity_report=report)
-
+    save_regularity_to_dwh(
+        ts=ts, time_col_name=time_col_name, regularity_report=report, app_conf=app_conf
+    )
     # todo: store offline report
 
     spark.stop()
