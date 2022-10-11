@@ -14,8 +14,9 @@ if __name__ == "__main__":
     # Initialize app
     app_conf = get_conf_from_evn()
 
-    SparkSession.builder.config("spark.hadoop.hive.exec.dynamic.partition", "true") \
-        .config("spark.hadoop.hive.exec.dynamic.partition.mode", "nonstrict")
+    SparkSession.builder.config(
+        "spark.hadoop.hive.exec.dynamic.partition", "true"
+    ).config("spark.hadoop.hive.exec.dynamic.partition.mode", "nonstrict")
 
     # [AICNS-61]
     if app_conf["SPARK_EXTRA_CONF_PATH"] != "":

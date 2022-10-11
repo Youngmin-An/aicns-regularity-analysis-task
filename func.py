@@ -11,7 +11,14 @@ from univariate.strategy.period import PeriodCalcType
 from pyspark.sql import DataFrame, SparkSession
 import pyspark.sql.functions as F
 
-__all__ = ['get_feature_metadata', 'get_conf_from_evn', 'parse_spark_extra_conf', 'load_raw_data', 'analyze_regularity', 'save_regularity_to_dwh']
+__all__ = [
+    "get_feature_metadata",
+    "get_conf_from_evn",
+    "parse_spark_extra_conf",
+    "load_raw_data",
+    "analyze_regularity",
+    "save_regularity_to_dwh",
+]
 
 
 def get_feature_metadata(app_conf):
@@ -51,7 +58,9 @@ def get_conf_from_evn():
         end_datetime = os.getenv("APP_TIME_END")  # yyyy-MM-dd'T'HH:mm:ss
         conf["APP_TIMEZONE"] = os.getenv("APP_TIMEZONE", default="UTC")
 
-        conf["SPARK_EXTRA_CONF_PATH"] = os.getenv("SPARK_EXTRA_CONF_PATH", default="")  # [AICNS-61]
+        conf["SPARK_EXTRA_CONF_PATH"] = os.getenv(
+            "SPARK_EXTRA_CONF_PATH", default=""
+        )  # [AICNS-61]
         conf["start"] = pendulum.parse(start_datetime).in_timezone(conf["APP_TIMEZONE"])
         conf["end"] = pendulum.parse(end_datetime).in_timezone(conf["APP_TIMEZONE"])
 
@@ -73,7 +82,14 @@ def parse_spark_extra_conf(app_conf):
     """
     with open(app_conf["SPARK_EXTRA_CONF_PATH"], "r") as cf:
         lines = cf.read().splitlines()
-        config_dict = dict(list(filter(lambda splited: len(splited) == 2, (map(lambda line: line.split(), lines)))))
+        config_dict = dict(
+            list(
+                filter(
+                    lambda splited: len(splited) == 2,
+                    (map(lambda line: line.split(), lines)),
+                )
+            )
+        )
     return config_dict
 
 
@@ -95,12 +111,16 @@ def analyze_regularity(ts: DataFrame, time_col_name: str) -> AnalysisReport:
 
     :return:
     """
-    analyzer: Analyzer = RegularityAnalyzer(period_strategy_type=PeriodCalcType.ClusteringAndApproximateGCD)  # todo: who has responsibility about automated dependency injection
+    analyzer: Analyzer = RegularityAnalyzer(
+        period_strategy_type=PeriodCalcType.ClusteringAndApproximateGCD
+    )  # todo: who has responsibility about automated dependency injection
     report: AnalysisReport = analyzer.analyze(ts=ts, time_col_name=time_col_name)
     return report
 
 
-def save_regularity_to_dwh(ts: DataFrame, time_col_name: str, regularity_report: AnalysisReport, app_conf):
+def save_regularity_to_dwh(
+    ts: DataFrame, time_col_name: str, regularity_report: AnalysisReport, app_conf
+):
     """
 
     :return:
@@ -111,14 +131,20 @@ def save_regularity_to_dwh(ts: DataFrame, time_col_name: str, regularity_report:
     if regularity == "regular":
         period = regularity_report.parameters["period"]
         periodic_error = regularity_report.parameters["periodic_error"]
-    millis = ts.orderBy(F.col(time_col_name).desc()).first()[0] - ts.select(time_col_name).first()[0]
+    millis = (
+        ts.orderBy(F.col(time_col_name).desc()).first()[0]
+        - ts.select(time_col_name).first()[0]
+    )
     cnt = ts.count()
 
     table_name = "regularity_" + app_conf["FEATURE_ID"]
     SparkSession.getActiveSession().sql(
-        f"CREATE TABLE IF NOT EXISTS {table_name} (regularity CHAR (9), period DOUBLE, periodic_error DOUBLE, start_date DATE, end_date DATE, sample_duration_millisec INT, sample_size INT) STORED AS PARQUET")
+        f"CREATE TABLE IF NOT EXISTS {table_name} (regularity CHAR (9), period DOUBLE, periodic_error DOUBLE, start_date DATE, end_date DATE, sample_duration_millisec INT, sample_size INT) STORED AS PARQUET"
+    )
 
-    SparkSession.getActiveSession().sql(f"INSERT INTO {table_name} VALUES ({regularity}, {period}, {periodic_error}, '{app_conf['start'].format('YYYY-MM-DD')}', '{app_conf['end'].format('YYYY-MM-DD')}', {millis}, {cnt})")
+    SparkSession.getActiveSession().sql(
+        f"INSERT INTO {table_name} VALUES ({regularity}, {period}, {periodic_error}, '{app_conf['start'].format('YYYY-MM-DD')}', '{app_conf['end'].format('YYYY-MM-DD')}', {millis}, {cnt})"
+    )
 
 
 def propagate_regularity_report():
