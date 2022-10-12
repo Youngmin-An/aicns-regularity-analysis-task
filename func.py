@@ -1,7 +1,6 @@
 """
 Function level adapters
 """
-from rawDataLoader import RawDataLoader, DatePartitionedRawDataLoader
 import os
 import pendulum
 from utils.feature_util import mongo_to_dict
@@ -22,7 +21,7 @@ __all__ = [
     "get_feature_metadata",
     "get_conf_from_evn",
     "parse_spark_extra_conf",
-    "load_raw_data",
+    "load_validated_data",
     "analyze_regularity",
     "save_regularity_to_dwh",
 ]
@@ -100,17 +99,25 @@ def parse_spark_extra_conf(app_conf):
     return config_dict
 
 
-def load_raw_data(app_conf, feature, time_col_name, data_col_name):
-    loader: RawDataLoader = DatePartitionedRawDataLoader()
-    loader.prepare_to_load(**app_conf)
-    feature_raw_df = (
-        loader.load_feature_data_by_object(
-            start=app_conf["start"], end=app_conf["end"], feature=feature
-        )
-        .select(time_col_name, data_col_name)
-        .sort(time_col_name)
-    )
-    return feature_raw_df
+def load_validated_data(app_conf, feature, time_col_name, data_col_name) -> DataFrame:
+    """
+    Validated data from DWH(Hive)
+    :param app_conf:
+    :param feature:
+    :param time_col_name:
+    :param data_col_name:
+    :return:
+    """
+    query = f'''
+    SELECT v.{time_col_name}, v.{data_col_name}  
+        FROM (
+            SELECT {time_col_name}, {data_col_name}, concat(concat(cast(year as string), lpad(cast(month as string), 2, '0')), lpad(cast(day as string), 2, '0')) as date 
+            FROM validated_{feature.feature_id}
+            ) v 
+        WHERE v.date  >= {app_conf['start'].format('YYYYMMDD')} AND v.date <= {app_conf['end'].format('YYYYMMDD')} 
+    '''
+    ts = SparkSession.getActiveSession().sql(query)
+    return ts.sort(F.col(time_col_name).desc())
 
 
 def analyze_regularity(ts: DataFrame, time_col_name: str) -> AnalysisReport:

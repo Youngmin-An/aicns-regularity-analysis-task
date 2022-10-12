@@ -35,7 +35,7 @@ if __name__ == "__main__":
     time_col_name = "event_time"
 
     # Load data  # todo: will validated data go dwh?
-    ts = load_raw_data(app_conf, sensor, time_col_name, data_col_name)
+    ts = load_validated_data(app_conf, sensor, time_col_name, data_col_name)
 
     # Analyze regularity
     report: AnalysisReport = analyze_regularity(ts=ts, time_col_name=time_col_name)
