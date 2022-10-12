@@ -9,6 +9,13 @@ from featureMetadataFetcher import FeatureMetadataFetcher, SensorMetadataFetcher
 from univariate.analyzer import AnalysisReport, RegularityAnalyzer, Analyzer
 from univariate.strategy.period import PeriodCalcType
 from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    FloatType,
+    IntegerType,
+    StringType,
+)
 import pyspark.sql.functions as F
 
 __all__ = [
@@ -131,20 +138,50 @@ def save_regularity_to_dwh(
     if regularity == "regular":
         period = regularity_report.parameters["period"]
         periodic_error = regularity_report.parameters["periodic_error"]
+    cnt = ts.count()
     millis = (
         ts.orderBy(F.col(time_col_name).desc()).first()[0]
         - ts.select(time_col_name).first()[0]
-    )
-    cnt = ts.count()
+    ) if cnt > 0 else None
 
     table_name = "regularity_" + app_conf["FEATURE_ID"]
     SparkSession.getActiveSession().sql(
         f"CREATE TABLE IF NOT EXISTS {table_name} (regularity CHAR (9), period DOUBLE, periodic_error DOUBLE, start_date DATE, end_date DATE, sample_duration_millisec INT, sample_size INT) STORED AS PARQUET"
     )
 
-    SparkSession.getActiveSession().sql(
-        f"INSERT INTO {table_name} VALUES ({regularity}, {period}, {periodic_error}, '{app_conf['start'].format('YYYY-MM-DD')}', '{app_conf['end'].format('YYYY-MM-DD')}', {millis}, {cnt})"
+    schema = StructType(
+        [
+            StructField("reglarity", StringType(), True),
+            StructField("period", FloatType(), True),
+            StructField("periodic_error", FloatType(), True),
+            StructField("start", StringType(), True),
+            StructField("end", StringType(), True),
+            StructField("sample_duration_millisec", IntegerType(), True),
+            StructField("sample_size", IntegerType(), True),
+        ]
     )
+    data = [
+        (
+            regularity,
+            period,
+            periodic_error,
+            app_conf["start"],
+            app_conf["end"],
+            millis,
+            cnt,
+        )
+    ]
+    df = SparkSession.getActiveSession().createDataFrame(data=data, schema=schema)
+    df = df.select(
+        "reglarity",
+        "period",
+        "periodic_error",
+        F.to_date("start").alias("start_date"),
+        F.to_date("end").alias("end_date"),
+        "sample_duration_millisec",
+        "sample_size",
+    )
+    df.write.option("nullValue", None).format("hive").insertInto(table_name)
 
 
 def propagate_regularity_report():
