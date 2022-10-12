@@ -1,6 +1,6 @@
 aicns-feature-metadata==0.0.2
 aicns-raw-data-loader==0.1.0
-aicns-univariate-analyzer==0.5.1
+aicns-univariate-analyzer==0.7.0
 black==22.10.0
 certifi==2022.9.24
 click==8.1.3
