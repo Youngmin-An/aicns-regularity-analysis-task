@@ -111,11 +111,13 @@ def load_validated_data(app_conf, time_col_name, data_col_name) -> DataFrame:
     :param data_col_name:
     :return:
     """
+    table_name = "validated_" + app_conf['FEATURE_ID']
+    SparkSession.getActiveSession().sql(f"REFRESH TABLE validated_{table_name}")
     query = f'''
     SELECT v.{time_col_name}, v.{data_col_name}  
         FROM (
             SELECT {time_col_name}, {data_col_name}, concat(concat(cast(year as string), lpad(cast(month as string), 2, '0')), lpad(cast(day as string), 2, '0')) as date 
-            FROM validated_{app_conf['FEATURE_ID']}
+            FROM {table_name}
             ) v 
         WHERE v.date  >= {app_conf['start'].format('YYYYMMDD')} AND v.date <= {app_conf['end'].format('YYYYMMDD')} 
     '''
