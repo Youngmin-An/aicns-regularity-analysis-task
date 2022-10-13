@@ -112,7 +112,9 @@ def load_validated_data(app_conf, time_col_name, data_col_name) -> DataFrame:
     :return:
     """
     table_name = "validated_" + app_conf['FEATURE_ID']
-    SparkSession.getActiveSession().sql(f"REFRESH TABLE validated_{table_name}")
+    # Inconsistent cache
+    # https://stackoverflow.com/questions/63731085/you-can-explicitly-invalidate-the-cache-in-spark-by-running-refresh-table-table
+    SparkSession.getActiveSession().sql(f"REFRESH TABLE {table_name}")
     query = f'''
     SELECT v.{time_col_name}, v.{data_col_name}  
         FROM (
