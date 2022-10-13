@@ -16,6 +16,7 @@ from pyspark.sql.types import (
     StringType,
 )
 import pyspark.sql.functions as F
+import logging
 
 __all__ = [
     "get_feature_metadata",
@@ -25,6 +26,8 @@ __all__ = [
     "analyze_regularity",
     "save_regularity_to_dwh",
 ]
+
+logger = logging.getLogger()
 
 
 def get_feature_metadata(app_conf):
@@ -99,7 +102,7 @@ def parse_spark_extra_conf(app_conf):
     return config_dict
 
 
-def load_validated_data(app_conf, feature, time_col_name, data_col_name) -> DataFrame:
+def load_validated_data(app_conf, time_col_name, data_col_name) -> DataFrame:
     """
     Validated data from DWH(Hive)
     :param app_conf:
@@ -112,11 +115,13 @@ def load_validated_data(app_conf, feature, time_col_name, data_col_name) -> Data
     SELECT v.{time_col_name}, v.{data_col_name}  
         FROM (
             SELECT {time_col_name}, {data_col_name}, concat(concat(cast(year as string), lpad(cast(month as string), 2, '0')), lpad(cast(day as string), 2, '0')) as date 
-            FROM validated_{feature.feature_id}
+            FROM validated_{app_conf['FEATURE_ID']}
             ) v 
         WHERE v.date  >= {app_conf['start'].format('YYYYMMDD')} AND v.date <= {app_conf['end'].format('YYYYMMDD')} 
     '''
+    logger.info("load_validated_data query: " + query)
     ts = SparkSession.getActiveSession().sql(query)
+    logger.info(ts.show())
     return ts.sort(F.col(time_col_name).desc())
 
 
@@ -172,8 +177,8 @@ def save_regularity_to_dwh(
             regularity,
             period,
             periodic_error,
-            app_conf["start"],
-            app_conf["end"],
+            app_conf["start"].format("YYYY-MM-DD"),
+            app_conf["end"].format("YYYY-MM-DD"),
             millis,
             cnt,
         )
