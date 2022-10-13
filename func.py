@@ -1,7 +1,6 @@
 """
 Function level adapters
 """
-from rawDataLoader import RawDataLoader, DatePartitionedRawDataLoader
 import os
 import pendulum
 from utils.feature_util import mongo_to_dict
@@ -17,15 +16,18 @@ from pyspark.sql.types import (
     StringType,
 )
 import pyspark.sql.functions as F
+import logging
 
 __all__ = [
     "get_feature_metadata",
     "get_conf_from_evn",
     "parse_spark_extra_conf",
-    "load_raw_data",
+    "load_validated_data",
     "analyze_regularity",
     "save_regularity_to_dwh",
 ]
+
+logger = logging.getLogger()
 
 
 def get_feature_metadata(app_conf):
@@ -100,17 +102,31 @@ def parse_spark_extra_conf(app_conf):
     return config_dict
 
 
-def load_raw_data(app_conf, feature, time_col_name, data_col_name):
-    loader: RawDataLoader = DatePartitionedRawDataLoader()
-    loader.prepare_to_load(**app_conf)
-    feature_raw_df = (
-        loader.load_feature_data_by_object(
-            start=app_conf["start"], end=app_conf["end"], feature=feature
-        )
-        .select(time_col_name, data_col_name)
-        .sort(time_col_name)
-    )
-    return feature_raw_df
+def load_validated_data(app_conf, time_col_name, data_col_name) -> DataFrame:
+    """
+    Validated data from DWH(Hive)
+    :param app_conf:
+    :param feature:
+    :param time_col_name:
+    :param data_col_name:
+    :return:
+    """
+    table_name = "validated_" + app_conf['FEATURE_ID']
+    # Inconsistent cache
+    # https://stackoverflow.com/questions/63731085/you-can-explicitly-invalidate-the-cache-in-spark-by-running-refresh-table-table
+    SparkSession.getActiveSession().sql(f"REFRESH TABLE {table_name}")
+    query = f'''
+    SELECT v.{time_col_name}, v.{data_col_name}  
+        FROM (
+            SELECT {time_col_name}, {data_col_name}, concat(concat(cast(year as string), lpad(cast(month as string), 2, '0')), lpad(cast(day as string), 2, '0')) as date 
+            FROM {table_name}
+            ) v 
+        WHERE v.date  >= {app_conf['start'].format('YYYYMMDD')} AND v.date <= {app_conf['end'].format('YYYYMMDD')} 
+    '''
+    logger.info("load_validated_data query: " + query)
+    ts = SparkSession.getActiveSession().sql(query)
+    logger.info(ts.show())
+    return ts.sort(F.col(time_col_name).desc())
 
 
 def analyze_regularity(ts: DataFrame, time_col_name: str) -> AnalysisReport:
@@ -165,8 +181,8 @@ def save_regularity_to_dwh(
             regularity,
             period,
             periodic_error,
-            app_conf["start"],
-            app_conf["end"],
+            app_conf["start"].format("YYYY-MM-DD"),
+            app_conf["end"].format("YYYY-MM-DD"),
             millis,
             cnt,
         )
