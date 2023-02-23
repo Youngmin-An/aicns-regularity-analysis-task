@@ -22,7 +22,7 @@ __all__ = [
     "get_feature_metadata",
     "get_conf_from_evn",
     "parse_spark_extra_conf",
-    "load_validated_data",
+    "load_deduplicated_data",
     "analyze_regularity",
     "save_regularity_to_dwh",
 ]
@@ -102,16 +102,15 @@ def parse_spark_extra_conf(app_conf):
     return config_dict
 
 
-def load_validated_data(app_conf, time_col_name, data_col_name) -> DataFrame:
+def load_deduplicated_data(app_conf, time_col_name, data_col_name) -> DataFrame:
     """
-    Validated data from DWH(Hive)
+    deduplicated data from DWH(Hive)
     :param app_conf:
-    :param feature:
     :param time_col_name:
     :param data_col_name:
     :return:
     """
-    table_name = "validated_" + app_conf['FEATURE_ID']
+    table_name = "cleaned_deduplicated"
     # Inconsistent cache
     # https://stackoverflow.com/questions/63731085/you-can-explicitly-invalidate-the-cache-in-spark-by-running-refresh-table-table
     SparkSession.getActiveSession().sql(f"REFRESH TABLE {table_name}")
@@ -120,12 +119,13 @@ def load_validated_data(app_conf, time_col_name, data_col_name) -> DataFrame:
         FROM (
             SELECT {time_col_name}, {data_col_name}, concat(concat(cast(year as string), lpad(cast(month as string), 2, '0')), lpad(cast(day as string), 2, '0')) as date 
             FROM {table_name}
+            WHERE feature_id = {app_conf['FEATURE_ID']}
             ) v 
         WHERE v.date  >= {app_conf['start'].format('YYYYMMDD')} AND v.date <= {app_conf['end'].format('YYYYMMDD')} 
     '''
-    logger.info("load_validated_data query: " + query)
+    logger.info("load_deduplicated_data query: " + query)
     ts = SparkSession.getActiveSession().sql(query)
-    logger.info(ts.show())
+    ts.show()
     return ts.sort(F.col(time_col_name).desc())
 
 
@@ -160,20 +160,21 @@ def save_regularity_to_dwh(
         - ts.select(time_col_name).first()[0]
     ) if cnt > 0 else None
 
-    table_name = "regularity_" + app_conf["FEATURE_ID"]
+    table_name = "analyzed_regularity_estimates"
     SparkSession.getActiveSession().sql(
-        f"CREATE TABLE IF NOT EXISTS {table_name} (regularity CHAR (9), period DOUBLE, periodic_error DOUBLE, start_date DATE, end_date DATE, sample_duration_millisec INT, sample_size INT) STORED AS PARQUET"
+        f"CREATE TABLE IF NOT EXISTS {table_name} (regularity CHAR (9), period DOUBLE, periodic_error DOUBLE, start_date DATE, end_date DATE, sample_duration_millisec INT, sample_size INT) PARTITIONED BY (feature_id char(10)) STORED AS PARQUET"
     )
 
     schema = StructType(
         [
-            StructField("reglarity", StringType(), True),
+            StructField("regularity", StringType(), True),
             StructField("period", FloatType(), True),
             StructField("periodic_error", FloatType(), True),
             StructField("start", StringType(), True),
             StructField("end", StringType(), True),
             StructField("sample_duration_millisec", IntegerType(), True),
             StructField("sample_size", IntegerType(), True),
+            StructField("feature_id", StringType(), False)
         ]
     )
     data = [
@@ -185,17 +186,19 @@ def save_regularity_to_dwh(
             app_conf["end"].format("YYYY-MM-DD"),
             millis,
             cnt,
+            app_conf["FEATURE_ID"]
         )
     ]
     df = SparkSession.getActiveSession().createDataFrame(data=data, schema=schema)
     df = df.select(
-        "reglarity",
+        "regularity",
         "period",
         "periodic_error",
         F.to_date("start").alias("start_date"),
         F.to_date("end").alias("end_date"),
         "sample_duration_millisec",
         "sample_size",
+        "feature_id"
     )
     df.write.option("nullValue", None).format("hive").insertInto(table_name)
 
