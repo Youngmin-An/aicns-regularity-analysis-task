@@ -34,8 +34,8 @@ if __name__ == "__main__":
     )
     time_col_name = "event_time"
 
-    # Load data  # todo: will validated data go dwh?
-    ts = load_validated_data(app_conf, time_col_name, data_col_name)
+    # Load data
+    ts = load_deduplicated_data(app_conf, time_col_name, data_col_name)
 
     # Analyze regularity
     report: AnalysisReport = analyze_regularity(ts=ts, time_col_name=time_col_name)
